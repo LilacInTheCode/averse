@@ -132,7 +132,7 @@ try:
 
     query: str = str.lower(book_abv) + " " + str(chapter_no) + ":" + verse_range
     # print(query)
-    os.system("./kjv " + query)
+    os.system("kjv " + query)
 
 except KeyboardInterrupt:
     print("\b\b  ")
