@@ -1,0 +1,140 @@
+#! /usr/bin/env python3
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING: from _typeshed import SupportsWrite, SupportsRead
+
+from json import dump, load
+from random import randint
+import os
+
+class Surveyor(object):
+    def __init__(self):
+        # Collection of surveyed books
+        self.survey_books: dict[str, dict] = {}
+
+        # Remember current state between calls
+        self.current_book: str = "none"
+        self.current_chapter: str = "none"
+        # Chapter buffer
+        self.accumulated_chapters: dict[str, int] = {}
+        # Verse buffer
+        self.accumulated_verses: int = 0
+
+        # Constants
+        self.SRC_FILENAME: str = 'kjv.tsv'
+        self.SURVEY_FILENAME: str = 'survey.json'
+        self.NOSURVEY_MSG: str = "Missing survey file and cannot find source. Ensure kjv.tsv is in the same directory."
+
+        # Setup
+        self.search_survey()
+        if self.survey_books is None:
+            self.perform_survey()
+
+        if len(self.survey_books.keys()) == 0:
+            print(self.NOSURVEY_MSG)
+
+    def search_survey(self):
+        try:
+            with open(self.SURVEY_FILENAME, 'r') as survey_file:  # type: SupportsRead[str]
+                self.survey_books = load(survey_file)
+        except FileNotFoundError:
+            self.survey_books = None
+
+    def perform_survey(self):
+        try:
+            self.survey_books = {}
+            with open(self.SRC_FILENAME) as text_file:
+                for line in text_file:
+                    self.line_survey(line)
+
+            self.line_survey("none\tnone\t0\t0\t0")
+
+            self.cache_survey()
+        except FileNotFoundError:
+            print(self.NOSURVEY_MSG)
+            exit(10000)
+
+    def line_survey(self, line_in: str):
+        book = 1
+        bk_no = 2
+        ch = 3
+
+        # Tokenize input
+        cols = line_in.split("\t")
+
+        if self.current_book == "none":  # then this is our first run or our last
+            if self.current_chapter == "none":
+                self.current_book = cols[book]
+                self.current_chapter = cols[ch]
+                self.accumulated_verses = 1
+                return
+            else:
+                self.accumulated_chapters[self.current_chapter] = self.accumulated_verses
+                self.survey_books[self.current_book] = self.accumulated_chapters.copy()
+                self.accumulated_chapters.clear()
+
+                self.accumulated_verses = 1
+                self.current_chapter = "none"
+                return
+
+        # If the book number (3rd col) is past the canon
+        if int(cols[bk_no]) > 66:
+            return  # ignore apocrypha
+
+        # About to start a new book
+        if cols[book] != self.current_book:
+            self.accumulated_chapters[self.current_chapter] = self.accumulated_verses
+            self.survey_books[self.current_book] = self.accumulated_chapters.copy()
+            self.accumulated_chapters.clear()
+            self.current_chapter = "1"
+            self.accumulated_verses = 0
+            self.current_book = cols[book]
+
+        # Starting a new chapter
+        if self.current_chapter != cols[ch]:
+            self.accumulated_chapters[self.current_chapter] = self.accumulated_verses
+            self.accumulated_verses = 0
+            self.current_chapter = cols[3]
+
+        # Every line is a verse
+        self.accumulated_verses += 1
+
+    def cache_survey(self):
+        try:
+            with open('survey.json', 'w') as fp:  # type: SupportsWrite[str]
+                dump(self.survey_books, fp)
+        except IOError:
+            pass
+
+    def book_range(self) -> int:
+        return len(self.survey_books.keys())
+
+    def chapter_range(self, book: str) -> int:
+        return len(self.survey_books.get(book))
+
+    def verse_range(self, book: str, chapter: str) -> int:
+        return self.survey_books.get(book).get(chapter)
+
+
+try:
+    surveyor = Surveyor()
+    book_no: int = randint(1, surveyor.book_range())
+    book_abv: str = list(surveyor.survey_books)[book_no]
+
+    chapter_no: int = randint(1, surveyor.chapter_range(book_abv))
+    last_verse: int = surveyor.verse_range(book_abv, str(chapter_no))
+
+    verse_begin: int = randint(1, last_verse)
+    verse_end: int = randint(verse_begin, last_verse)
+    verse_range: str = str(verse_begin)
+    if verse_end > verse_begin:
+        verse_range = str(verse_begin) + "-" + str(verse_end)
+
+    query: str = str.lower(book_abv) + " " + str(chapter_no) + ":" + verse_range
+    # print(query)
+    os.system("./kjv " + query)
+
+except KeyboardInterrupt:
+    print("\b\b  ")
+
+exit(0)
