@@ -1,12 +1,17 @@
 #! /usr/bin/env python3
 
+# Not essential (PyCharm complains without file access specifying SupportsRead/Write
 from typing import TYPE_CHECKING
 if TYPE_CHECKING: from _typeshed import SupportsWrite, SupportsRead
 
+# Import functions from json, random, and os packages
 from json import dump, load
 from random import randint
 import os
 
+
+# Surveyor utility class that walks the spreadsheet or retrieves
+# the cached .json file
 class Surveyor(object):
     def __init__(self):
         # Collection of surveyed books
@@ -25,11 +30,12 @@ class Surveyor(object):
         self.SURVEY_FILENAME: str = 'survey.json'
         self.NOSURVEY_MSG: str = "Missing survey file and cannot find source. Ensure kjv.tsv is in the same directory."
 
-        # Setup
-        self.search_survey()
+        # Setup     v Try to find cache file
+        self.search_survey()   # v Survey cache was not found
         if self.survey_books is None:
-            self.perform_survey()
+            self.perform_survey()  # < Go through the spreadsheet and generate the cache
 
+        # Survey was not able to generate cache
         if len(self.survey_books.keys()) == 0:
             print(self.NOSURVEY_MSG)
 
@@ -42,19 +48,26 @@ class Surveyor(object):
 
     def perform_survey(self):
         try:
+            # Clear the cache
             self.survey_books = {}
+            # Attempt to open the spreadsheet file and read lines in
             with open(self.SRC_FILENAME) as text_file:
                 for line in text_file:
                     self.line_survey(line)
 
+            # Run one more line to cache the final chapter of the last book
             self.line_survey("none\tnone\t0\t0\t0")
 
+            # Store cache in a .json file
             self.cache_survey()
+
         except FileNotFoundError:
             print(self.NOSURVEY_MSG)
             exit(10000)
 
+    # Take in a line of the spreadsheet to slot into the right spot
     def line_survey(self, line_in: str):
+        # Index aliases
         book = 1
         bk_no = 2
         ch = 3
@@ -63,12 +76,12 @@ class Surveyor(object):
         cols = line_in.split("\t")
 
         if self.current_book == "none":  # then this is our first run or our last
-            if self.current_chapter == "none":
+            if self.current_chapter == "none": # First run
                 self.current_book = cols[book]
                 self.current_chapter = cols[ch]
                 self.accumulated_verses = 1
                 return
-            else:
+            else: # Last run
                 self.accumulated_chapters[self.current_chapter] = self.accumulated_verses
                 self.survey_books[self.current_book] = self.accumulated_chapters.copy()
                 self.accumulated_chapters.clear()
@@ -83,17 +96,22 @@ class Surveyor(object):
 
         # About to start a new book
         if cols[book] != self.current_book:
+            # Store the last chapter of the previous book
             self.accumulated_chapters[self.current_chapter] = self.accumulated_verses
+            # Store the accumulated chapters of the previous book and prepare for this one
             self.survey_books[self.current_book] = self.accumulated_chapters.copy()
             self.accumulated_chapters.clear()
             self.current_chapter = "1"
             self.accumulated_verses = 0
+            # Switch to this book
             self.current_book = cols[book]
 
         # Starting a new chapter
         if self.current_chapter != cols[ch]:
+            # Store the previous chapter and prepare for this one
             self.accumulated_chapters[self.current_chapter] = self.accumulated_verses
             self.accumulated_verses = 0
+            # Switch to this chapter
             self.current_chapter = cols[3]
 
         # Every line is a verse
@@ -101,9 +119,11 @@ class Surveyor(object):
 
     def cache_survey(self):
         try:
+            # Open the survey file and write the spreadsheet survey to it
             with open('survey.json', 'w') as fp:  # type: SupportsWrite[str]
                 dump(self.survey_books, fp)
         except IOError:
+            # If it fails, don't worry about it
             pass
 
     def book_range(self) -> int:
@@ -117,24 +137,24 @@ class Surveyor(object):
 
 
 try:
+    # Spin up a surveyor (which does the cache retrieval or cache generation in the constructor)
     surveyor = Surveyor()
+    # Select a book at random and get its abbreviation
     book_no: int = randint(1, surveyor.book_range())
     book_abv: str = list(surveyor.survey_books)[book_no]
-
+    # Select a verse at random from that book
     chapter_no: int = randint(1, surveyor.chapter_range(book_abv))
+    # Find out how many verses that chapter has and pick one at random
     last_verse: int = surveyor.verse_range(book_abv, str(chapter_no))
+    verse_no: int = randint(1, last_verse)
 
-    verse_begin: int = randint(1, last_verse)
-    verse_end: int = randint(verse_begin, last_verse)
-    verse_range: str = str(verse_begin)
-    if verse_end > verse_begin:
-        verse_range = str(verse_begin) + "-" + str(verse_end)
-
-    query: str = str.lower(book_abv) + " " + str(chapter_no) + ":" + verse_range
-    # print(query)
+    # Build a query for kjv to reference
+    query: str = str.lower(book_abv) + " " + str(chapter_no) + ":" + str(verse_no)
+    # Call kjv script with the formulated query
     os.system("kjv " + query)
 
 except KeyboardInterrupt:
     print("\b\b  ")
+    # Any keyboard interrupt actions go here (Ending the program at the CLI with Ctrl+C)
 
 exit(0)
